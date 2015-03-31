@@ -1,0 +1,9 @@
+Debug/
+Release/
+Microsoft MPI/
+lib/
+*.mtx
+*.txt
+*.xml
+*.pdb
+*.vcxproj.user
