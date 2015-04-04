@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+#include <sstream>
 
 #pragma warning(disable : 4996)
 
@@ -117,7 +118,7 @@ SParams readXMLConfig( const char* fileName )
 
 void saveCommMtx( long long** commMtx, int size, const char* fileName )
 {
-    std::string outData;
+    std::stringstream outData;
     int lines = 0;
 
     for ( int i = 0; i < size; ++i )
@@ -126,12 +127,7 @@ void saveCommMtx( long long** commMtx, int size, const char* fileName )
         {
             if ( commMtx[i][q] != 0 )
             {
-                outData.append( std::to_string(i) )
-                       .append(" ")
-                       .append( std::to_string(q) )
-                       .append(" ")
-                       .append( std::to_string( commMtx[i][q] ) )
-                       .append("\n");
+                outData << i << " " << q << " " << commMtx[i][q] << "\n";
                 ++lines;
             }
          }
@@ -141,20 +137,15 @@ void saveCommMtx( long long** commMtx, int size, const char* fileName )
     if ( !fp ) 
         throw std::string( "Problems with comm mtx file. " ).append( __FUNCTION__ );
 
-    std::string desc;
-    desc.append( std::to_string(size) )
-        .append(" ")
-        .append( std::to_string(size) )
-        .append(" ")
-        .append( std::to_string(lines) )
-        .append("\n");
+    std::stringstream desc;
+    desc << size << " " << size << " " << lines << "\n";
 
-    size_t res = fwrite( desc.c_str(), 1, desc.length(), fp );
-    if ( res != desc.length() )
+    size_t res = fwrite( desc.str().c_str(), 1, desc.str().length(), fp );
+    if ( res != desc.str().length() )
         throw std::string( "Error while comm mtx writing. " ).append( __FUNCTION__ );
 
-    res = fwrite( outData.c_str(), 1, outData.length(), fp );
-    if ( res != outData.length() )
+    res = fwrite( outData.str().c_str(), 1, outData.str().length(), fp );
+    if ( res != outData.str().length() )
         throw std::string( "Error while comm mtx writing. " ).append( __FUNCTION__ );
 
     fclose( fp );
@@ -198,7 +189,7 @@ int generator_routine( parparser& args )
 
         int biggestTransfer = 0;
 
-        std::string trace;
+        std::stringstream trace;
 
         while ( currentTransferedData < targetTransferedData )
         {
@@ -252,14 +243,7 @@ int generator_routine( parparser& args )
 
             commMtx[from][to] += transferSize;
 
-            trace.append("s ")
-                    .append( std::to_string(from) )
-                    .append(" ")
-                    .append( std::to_string(to) )
-                    .append(" ")
-                    .append( std::to_string( transferSize ) )
-                    .append("\n");
-
+            trace << "s " << from << " " << to << " " << transferSize << "\n";
             currentTransferedData += transferSize;
 
             if ( currentTransferedData / 1024 > curProcess )
@@ -274,25 +258,25 @@ int generator_routine( parparser& args )
             avrgNNum += neighborsNum[i];
         avrgNNum /= params.procNumber;
 
-        std::string comments;
-        comments.append("#transfered: ").append( std::to_string( currentTransferedData ) ).append("\n");
-        comments.append("#avrg_neighbors_num: ").append( std::to_string( avrgNNum ) ).append("\n");
-        comments.append("%procs_num: ").append( std::to_string( params.procNumber ) ).append("\n");
-        comments.append("%transfer_buf: ").append( std::to_string( biggestTransfer ) ).append("\n");
-        comments.append("%sleep: ").append( std::to_string( params.averageSleepTime ) ).append("\n");
-        comments.append("%sleep_disp: ").append( std::to_string( params.averageSleepTimeDispersion ) ).append("\n");
-        comments.append("-------------------------\n");
+        std::stringstream comments;
+        comments << "#transfered: " << currentTransferedData << "\n";
+        comments << "#avrg_neighbors_num: " << avrgNNum << "\n";
+        comments << "%procs_num: " << params.procNumber << "\n";
+        comments << "%transfer_buf: " << biggestTransfer << "\n";
+        comments << "%sleep: " << params.averageSleepTime << "\n";
+        comments << "%sleep_disp: " << params.averageSleepTimeDispersion << "\n";
+        comments << "-------------------------\n";
 
         FILE* fp = fopen( params.outFile.c_str(), "wb" );
         if ( !fp ) 
             throw std::string( "Problems with out file. " ).append( __FUNCTION__ );
 
-        size_t res = fwrite( comments.c_str(), 1, comments.length(), fp );
-        if ( res != comments.length() )
+        size_t res = fwrite( comments.str().c_str(), 1, comments.str().length(), fp );
+        if ( res != comments.str().length() )
             throw std::string( "Error while out file writing. " ).append( __FUNCTION__ );
 
-        res = fwrite( trace.c_str(), 1, trace.length(), fp );
-        if ( res != trace.length() )
+        res = fwrite( trace.str().c_str(), 1, trace.str().length(), fp );
+        if ( res != trace.str().length() )
             throw std::string( "Error while out file writing. " ).append( __FUNCTION__ );
 
         if ( !params.commMtxFile.empty() )

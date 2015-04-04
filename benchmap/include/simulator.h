@@ -7,8 +7,12 @@
 #include <time.h>
 #include <stdlib.h>
 
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+#ifdef _MSC_VER
+    #define WIN32_LEAN_AND_MEAN
+    #include <Windows.h>
+#else
+    #include <unistd.h>
+#endif
 
 //--------------------------------------------------------
 
@@ -108,7 +112,11 @@ int simulator_routine( parparser& args )
                 needSleep = false;
                 int sleepMs = sleepTime + ( rand() % sleepTimeDisp ) - ( sleepTimeDisp / 2 );
                 if ( sleepMs > 0 )
-                    Sleep( sleepMs );
+                #ifdef _MSC_VER
+                     Sleep( sleepMs );
+                #else
+                    usleep( sleepMs * 1000 );
+                #endif
             }
         } 
         else if ( symb == '#' )
