@@ -12,6 +12,7 @@
 #include <time.h>
 #include <string.h>
 #include <sstream>
+#include <vector>
 
 #pragma warning(disable : 4996)
 
@@ -20,12 +21,11 @@
 struct SParams
 {
     int procNumber;
+    std::vector< float > probabilities;
     int averageSendSize;
-    int averageSendSizeDispersion;
     int averageSleepTime;
-    int averageSleepTimeDispersion;
-    unsigned totalTransferedDataKb;
-    int neighborsNumber;
+    float totalTransferedDataKb;
+
     std::string outFile;
     std::string commMtxFile;
 };
@@ -59,6 +59,8 @@ SParams readXMLConfig( const char* fileName )
 
     SParams parsedParams;
 
+    float probsSum = 0.0;
+
     for ( pugi::xml_node node = rootNode.child( "parameter" ); node; node = node.next_sibling() )
     {
         const char* name = node.attribute( "name" ).as_string(0);
@@ -73,25 +75,13 @@ SParams readXMLConfig( const char* fileName )
         {
             parsedParams.averageSendSize = node.attribute( "value" ).as_int(0);
         }
-        else if ( 0 == strcmp( "avrg-send-size-dispersion", name ) )
-        {
-            parsedParams.averageSendSizeDispersion = node.attribute( "value" ).as_int(0);
-        }
         else if ( 0 == strcmp( "avrg-sleep-time", name ) )
         {
             parsedParams.averageSleepTime = node.attribute( "value" ).as_int(0);
         }
-        else if ( 0 == strcmp( "avrg-sleep-time-dispersion", name ) )
-        {
-            parsedParams.averageSleepTimeDispersion = node.attribute( "value" ).as_int(0);
-        }
         else if ( 0 == strcmp( "total-transfered-data-kb", name ) )
         {
-            parsedParams.totalTransferedDataKb = node.attribute( "value" ).as_uint(0);
-        }
-        else if ( 0 == strcmp( "neighbors-number", name ) )
-        {
-            parsedParams.neighborsNumber = node.attribute( "value" ).as_int(0);
+            parsedParams.totalTransferedDataKb = node.attribute( "value" ).as_float(0);
         }
         else if ( 0 == strcmp( "out-file", name ) )
         {
@@ -101,12 +91,25 @@ SParams readXMLConfig( const char* fileName )
         {
             parsedParams.commMtxFile = node.attribute( "value" ).as_string();
         }
+        if ( 0 == strcmp( "probabilities", name ) )
+        {
+            for ( pugi::xml_node probNode = node.child( "prob" ); probNode; probNode = probNode.next_sibling() )
+            {
+                const float val = probNode.attribute("p").as_float(-1.0f);
+                if ( val < 0.0f || val > 1.0f )
+                {
+                    std::cout << "Probability was dropped\r\n";
+                    continue;
+                }
+                parsedParams.probabilities.push_back(val);        
+                probsSum += val;
+            }
+        }
     }
 
     if ( parsedParams.procNumber <= 0 || parsedParams.averageSendSize <= 0 || 
-         parsedParams.averageSendSizeDispersion < 0 || parsedParams.averageSleepTime < 0 || 
-         parsedParams.averageSleepTimeDispersion < 0 || parsedParams.outFile.empty() ||
-         parsedParams.totalTransferedDataKb < 0 || parsedParams.neighborsNumber < 0)
+         parsedParams.averageSleepTime < 0 || parsedParams.outFile.empty() ||
+         parsedParams.totalTransferedDataKb < 0.0f || parsedParams.probabilities.empty() || probsSum != 1.0f )
          throw std::string( "Invalid configuration. " ).append( __FUNCTION__ );
 
     fclose(fp);
@@ -153,6 +156,26 @@ void saveCommMtx( long long** commMtx, int size, const char* fileName )
 
 //--------------------------------------------------------
 
+int getPartition( const std::vector<float>& probs )
+{
+    float rVal = float(rand()) / RAND_MAX;
+
+    float pSum = 0.0f;
+    int part = 0;
+    for ( int i = 0; i < probs.size(); ++i )
+    {
+        pSum += probs[i];
+        if ( pSum >= rVal )
+            break;
+
+        ++part;
+    }
+
+    return part;
+}
+
+//--------------------------------------------------------
+
 int generator_routine( parparser& args )
 {
     int rank = 0;
@@ -163,22 +186,13 @@ int generator_routine( parparser& args )
     srand( unsigned(time(0)) );
 
     try
-    {
+    {       
         const char* configFile = args.get( "xml" ).asString(0);
         SParams params = readXMLConfig( configFile );
 
         const long long targetTransferedData = params.totalTransferedDataKb * 1024;
         long long currentTransferedData = 0;
-        long long curProcess = 0;
-        int* neighborsNum = new int[ params.procNumber ];
-        memset( neighborsNum, 0, sizeof( *neighborsNum ) * params.procNumber );
-
-        bool** links = new bool*[ params.procNumber ];
-        for ( int i = 0; i < params.procNumber; ++i )
-        {
-            links[i] = new bool[ params.procNumber ];
-            memset( links[i], 0, params.procNumber );
-        }
+        long long curProgress = 0;
 
         long long** commMtx = new long long*[ params.procNumber ];
         for ( int i = 0; i < params.procNumber; ++i )
@@ -187,84 +201,39 @@ int generator_routine( parparser& args )
             memset( commMtx[i], 0, params.procNumber * sizeof(**commMtx) );
         }
 
-        int biggestTransfer = 0;
-
         std::stringstream trace;
+        const int pSize = params.procNumber / params.probabilities.size();
 
         while ( currentTransferedData < targetTransferedData )
         {
-            int from = rand() % params.procNumber;
-            int to   = rand() % params.procNumber;
-            if ( from == to )
-                to = to + 1 >= params.procNumber ? to - 1 : to + 1;
-            
-            if ( params.neighborsNumber > 0 )
-            {
-                const int storeFrom = from;
-                const int storeTo   = to;
+            const int fromPartition = getPartition( params.probabilities );
+            const int toPartition   = getPartition( params.probabilities );
 
-                while ( from < params.procNumber && neighborsNum[ from ] >= params.neighborsNumber ) ++from;
-                while ( to < params.procNumber && neighborsNum[ to ] >= params.neighborsNumber ) ++to;
+            const int from = rand() % pSize;
+            const int to   = rand() % pSize;
+            if ( from == to && fromPartition == toPartition )
+                continue;
+                
+            const int fromIdx = fromPartition * pSize + from;
+            const int toIdx   = toPartition * pSize + to;
+            commMtx[ fromIdx ][ toIdx ] += params.averageSendSize;
+            commMtx[ toIdx ][ fromIdx ] += params.averageSendSize;
 
-                if ( from >= params.procNumber )
-                {
-                    from = 0;
-                    while ( from < params.procNumber && from < storeFrom && neighborsNum[ from ] >= params.neighborsNumber ) ++from;
-                }
-                if ( to >= params.procNumber )
-                {
-                    to = 0;
-                    while ( to < params.procNumber && to < storeTo && neighborsNum[ to ] >= params.neighborsNumber ) ++to;
-                }
+            trace << "s " << fromIdx << " " << toIdx << " " << params.averageSendSize << "\n";
+            currentTransferedData += params.averageSendSize;
 
-                if ( from >= params.procNumber || to >= params.procNumber || from == to ) 
-                {
-                    from = rand() % params.procNumber;
-                    to   = from == 0 ? 1 : 0;
-                    while ( to < params.procNumber && !links[from][to] ) ++to;
-
-                    if ( to >= params.procNumber )
-                        continue;
-                }
-            }
-
-            const int transferDisp = rand() % params.averageSendSizeDispersion;
-            const int transferSize = params.averageSendSize + transferDisp - ( params.averageSendSizeDispersion / 2 );
-            
-            if ( transferSize > biggestTransfer )
-                biggestTransfer = transferSize;
-
-            if ( !links[from][to] )
-            {
-                ++neighborsNum[from];
-                ++neighborsNum[to];
-                links[from][to] = true;
-            }
-
-            commMtx[from][to] += transferSize;
-
-            trace << "s " << from << " " << to << " " << transferSize << "\n";
-            currentTransferedData += transferSize;
-
-            if ( currentTransferedData / 1024 > curProcess )
+            if ( currentTransferedData / 1024 > curProgress )
             {
                 std::cout << currentTransferedData / 1024 << "/" << params.totalTransferedDataKb << "\n";
-                curProcess = currentTransferedData / 1024;
+                curProgress = currentTransferedData / 1024;
             }
         }
 
-        int avrgNNum = 0;
-        for ( int i = 0; i < params.procNumber; ++i )
-            avrgNNum += neighborsNum[i];
-        avrgNNum /= params.procNumber;
-
         std::stringstream comments;
         comments << "#transfered: " << currentTransferedData << "\n";
-        comments << "#avrg_neighbors_num: " << avrgNNum << "\n";
         comments << "%procs_num: " << params.procNumber << "\n";
-        comments << "%transfer_buf: " << biggestTransfer << "\n";
+        comments << "%transfer_buf: " << params.averageSendSize << "\n";
         comments << "%sleep: " << params.averageSleepTime << "\n";
-        comments << "%sleep_disp: " << params.averageSleepTimeDispersion << "\n";
         comments << "-------------------------\n";
 
         FILE* fp = fopen( params.outFile.c_str(), "wb" );
@@ -283,13 +252,9 @@ int generator_routine( parparser& args )
             saveCommMtx( commMtx, params.procNumber, params.commMtxFile.c_str() );
 
         fclose(fp);
-        delete[] neighborsNum;
         for ( int i = 0; i < params.procNumber; ++i )
-        {
-            delete[] links[i];
             delete[] commMtx[i];
-        }
-        delete[] links;
+
         delete[] commMtx;
     }
     catch( std::string err )
@@ -297,7 +262,6 @@ int generator_routine( parparser& args )
         std::cerr << "ERROR OCCURED:\n    " << err << "\n";
         std::cerr.flush();
     }
-
 
     return 0;
 }
