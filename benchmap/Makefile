@@ -3,8 +3,8 @@ all: benchmap
 #-----------------------------------------------------------------------------
 
 OBJDIR = obj/
-INCDIR = include/ parparser/
-SRCDIR = src/ parparser/
+INCDIR = include/
+SRCDIR = src/
 BINDIR = bin/
 
 #-----------------------------------------------------------------------------

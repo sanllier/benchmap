@@ -24,7 +24,7 @@
     <ClCompile Include="src\pugixml.cpp">
       <Filter>pugixml</Filter>
     </ClCompile>
-    <ClCompile Include="parparser\parparser.cpp">
+    <ClCompile Include="src\parparser.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
