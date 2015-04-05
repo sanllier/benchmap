@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sstream>
 #include <vector>
+#include <math.h>
 
 #pragma warning(disable : 4996)
 
@@ -109,8 +110,11 @@ SParams readXMLConfig( const char* fileName )
 
     if ( parsedParams.procNumber <= 0 || parsedParams.averageSendSize <= 0 || 
          parsedParams.averageSleepTime < 0 || parsedParams.outFile.empty() ||
-         parsedParams.totalTransferedDataKb < 0.0f || parsedParams.probabilities.empty() || probsSum != 1.0f )
+         parsedParams.totalTransferedDataKb < 0.0f || parsedParams.probabilities.empty() )
          throw std::string( "Invalid configuration. " ).append( __FUNCTION__ );
+
+    if ( fabs( probsSum - 1.0f ) > 0.001f )
+         throw std::string( "Invalid probabilities. " ).append( __FUNCTION__ );
 
     fclose(fp);
     delete[] buf;
