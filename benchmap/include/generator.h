@@ -190,7 +190,7 @@ int generator_routine( parparser& args )
         const char* configFile = args.get( "xml" ).asString(0);
         SParams params = readXMLConfig( configFile );
 
-        const long long targetTransferedData = params.totalTransferedDataKb * 1024;
+        const long long targetTransferedData = (long long)( params.totalTransferedDataKb * 1024 );
         long long currentTransferedData = 0;
         long long curProgress = 0;
 

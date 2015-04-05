@@ -4,7 +4,7 @@ all: benchmap
 
 OBJDIR = obj/
 INCDIR = include/ parparser/
-SRCDIR = src/
+SRCDIR = src/ parparser/
 BINDIR = bin/
 
 #-----------------------------------------------------------------------------
